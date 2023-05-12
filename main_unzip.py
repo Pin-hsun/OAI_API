@@ -7,13 +7,12 @@ import pydicom
 import numpy as np
 
 
-def unzip_selected(df, zipname, destination):
+def unzip_selected(df, zipname, folder_name, destination):
     print('Preparing archive...')
     archive = zipfile.ZipFile(zipname)
     print('Done...')
     for i in range(df.shape[0]):
-        folder = df.iloc[i]['folders']
-        print(folder)
+        folder = df.iloc[i][folder_name]
         n = 1
         while True:
             try:
@@ -36,9 +35,9 @@ def dcm_to_npys_and_metas(x, destination, metas):
 
     dcm_meta = []
     for f in folder_list[:]:
+        print(f)
         dcm_list = glob.glob(f+'/*')
         dcm_list.sort()
-
         # find ID and sequence and make folders if don't exist
         ID = f.split('/')[-3]
         sequence = pydicom.read_file(dcm_list[0]).SeriesDescription
@@ -71,7 +70,8 @@ def dcm_2_npys(dcm_folder):
 def get_zip():
     from main_meta import ver_to_months
     zipfiles = dict()
-    for VER in ['00', '01', '03', '05', '06', '08', '10']:
+    # for VER in ['00', '01', '03', '05', '06', '08', '10']:
+    for VER in ['00']:
         zipfiles[VER] = os.environ.get('zip' + ver_to_months(VER) + 'm')
     return zipfiles
 
@@ -86,13 +86,20 @@ if __name__ == '__main__':
     # name of the data
     csv = pd.read_csv('meta/womac4min0.csv')
     data_name = 'womac4min0/'
+    # csv = pd.read_csv('meta/test.csv')
+    # data_name = 'test/'
 
     # unzip dicom files from the zip file
-    for v in set(csv['VER']):
-        csv_ver = csv.loc[csv['VER'] == v]
-        unzip_selected(df=csv_ver.iloc[:, :],
-                       zipname=source + zipfiles[str(v).zfill(2)],
-                       destination=destination + data_name + 'dcm/')
+    # for v in set(csv['VER']):
+    #     csv_ver = csv.loc[csv['VER'] == v]
+    #     unzip_selected(df=csv_ver.iloc[:, :],
+    #                    zipname=source + zipfiles[str(v).zfill(2)],
+    #                    folder_name='folders',
+    #                    destination=destination + data_name + 'dcm/')
+        # unzip_selected(df=csv_ver.iloc[:, :],
+        #                zipname=source + zipfiles[str(v).zfill(2)],
+        #                folder_name='folders2',
+        #                destination=destination + data_name + 'dcm/')
 
     # convert the images from the dicom to .npy
     meta = dcm_2_npys(dcm_folder=destination + data_name + 'dcm/')

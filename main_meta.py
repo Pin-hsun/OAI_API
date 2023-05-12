@@ -4,7 +4,8 @@ import os
 from functools import reduce
 import matplotlib.pyplot as plt
 import seaborn as sns
-
+from dotenv import load_dotenv
+pd.options.mode.chained_assignment = None
 
 def oai_extract_data(path_oai_root, key, ver, var_list=None):
     """Return a dataframe given a specific category of OAI data and the version number
@@ -75,8 +76,8 @@ def oai_extract_data(path_oai_root, key, ver, var_list=None):
 
 
 def MOAKS_get_vars(categories, ver):
-    moaks_summary = pd.read_excel(os.path.join(os.path.expanduser('~'), 'Dropbox',
-                                               'TheSource/OAIDataBase/OAI_Labels/MOAKS/KMRI_SQ_MOAKS_variables_summary.xlsx'))
+    moaks_summary = pd.read_excel('/mnt/nas/Data/OAI/OAIDataBase/OAI_Labels/MOAKS/KMRI_SQ_MOAKS_variables_summary.xlsx'
+                                  , engine='openpyxl')
     moaks_variables = moaks_summary.loc[moaks_summary['CATEGORY'].isin(categories), 'VARIABLE']
     l = list(moaks_variables.values)
     return [x.replace('$$', ver) for x in l]
@@ -221,17 +222,17 @@ def load_path_files():
     return path
 
 
-def find_mri(x):
-    x['folders'] = None
+def find_mri(x, sequence_col='sequences', folder_col='folders'):
+    x[folder_col] = None
     for i in range(x.shape[0]):
         VER = x.iloc[i]['VER']
         path = path_all[VER]
         ID = x.iloc[i]['ID']
         SIDE = x.iloc[i]['SIDE']
-        sequences = x.iloc[i]['sequences']
+        sequences = x.iloc[i][sequence_col]
         found = path.loc[(path['ID'] == int(ID)) & (path['sequences'] == (sequences + SIDE))]['folders']
         if found.shape[0] > 0:
-            x['folders'].iloc[i] = found.values[0]
+            x[folder_col].iloc[i] = found.values[0]
     return x
 
 
@@ -257,15 +258,26 @@ def split_by_ver(df, vars, ver_list):
     all = pd.concat(all)
     return all
 
+def combine_WOMKPRL(y, varA, varB):
+    yright = y.loc[:, ['ID', 'VER', varA]]
+    yright['SIDE'] = 'RIGHT'
+    yright.rename(columns={varA: 'V$$WOMKP#'}, inplace=True)
+    yleft = y.loc[:, ['ID', 'VER', varB]]
+    yleft['SIDE'] = 'LEFT'
+    yleft.rename(columns={varB: 'V$$WOMKP#'}, inplace=True)
+    y = pd.concat([yright, yleft], 0)
+    return y
 
 if __name__ == '__main__':
-    path_oai_root = os.path.join(os.path.join(os.path.expanduser('~'), 'Dropbox'), 'TheSource/OAIDataBase')
+    load_dotenv('.env')
+    path_oai_root = os.environ.get('source')
+    # path_oai_root = os.path.join(os.path.join(os.path.expanduser('~'), 'Dropbox'), 'TheSource/OAIDataBase')
     ver_list = ['00', '01', '03', '05', '06', '08', '10']
     oai = main()
     moaks = get_moaks()
     path_all = load_path_files()
 
-    do_thing = 'X'
+    do_thing = 'womac pain difference >= 4 between knees, min(womacp) == 0'
 
     if do_thing == 'ver=00':
         x = []
@@ -374,35 +386,31 @@ if __name__ == '__main__':
     if do_thing == 'womac pain difference >= 4 between knees, min(womacp) == 0':
         x = []
         threshold = 4
-        for VER in ['00', '01', '03', '05', '06', '08', '10']:
+        # for VER in ['00', '01', '03', '05', '06', '08', '10']:
+        for VER in ['00']:
             var0 = 'V' + VER + 'WOMKPR'
             var1 = 'V' + VER + 'WOMKPL'
             varA = 'V$$WOMKPR'
             varB = 'V$$WOMKPL'
-
-            y = (lambda x: x.loc[((x[var0]-x[var1]).abs() >= threshold) & (x[[var0, var1]].min(1) == 0)])(oai['CLINICAL']).loc[:, ['ID', var0, var1]]
+            # Lambda function to filter rows based on conditions
+            filter_func = lambda x: x.loc[((x[var0] - x[var1]).abs() >= threshold) & (x[[var0, var1]].min(1) == 0)]
+            # Apply the lambda function to a subset of the oai DataFrame and select specific columns
+            y = filter_func(oai['CLINICAL']).loc[:, ['ID', var0, var1]]
             y['VER'] = VER
             y[varA] = y[var0]
             y[varB] = y[var1]
             y = y.loc[:, ['ID', 'VER', varA, varB]]
-
-            yright = y.loc[:, ['ID', 'VER', varA]]
-            yright['SIDE'] = 'RIGHT'
-            yright.rename(columns={varA: 'V$$WOMKP#'}, inplace=True)
-            yleft = y.loc[:, ['ID', 'VER', varB]]
-            yleft['SIDE'] = 'LEFT'
-            yleft.rename(columns={varB: 'V$$WOMKP#'}, inplace=True)
-
-            y = pd.concat([yright, yleft], 0)
-
+            y = combine_WOMKPRL(y, varA, varB)
             x.append(y)
 
         x = merge_multiple_data(x, how='outer', on=['ID', 'VER', 'SIDE','V$$WOMKP#'])
         x['sequences'] = 'SAG_IW_TSE_'
-        #x = copy_left_right(x)q
+        x['sequences2'] = 'COR_IW_TSE_'
         x = find_mri(x)
+        x = find_mri(x, sequence_col='sequences2', folder_col='folders2')
         x = left_right_have_mri(x)
-        x = sort_columns(x, ['ID', 'VER', 'SIDE', 'V$$WOMKP#', 'sequences', 'folders'])
+        # x = sort_columns(x, ['ID', 'VER', 'SIDE', 'V$$WOMKP#', 'sequences', 'folders'])
+        x = sort_columns(x, ['ID', 'VER', 'SIDE', 'V$$WOMKP#', 'sequences', 'sequences2', 'folders', 'folders2'])
         x = x.sort_values(by=['ID', 'VER', 'SIDE'])
 
         xr = split_by_ver(df=oai['XR'], vars=['V$$XRKL', 'V$$XRJSM', 'V$$XRJSL'], ver_list=ver_list)
@@ -410,12 +418,12 @@ if __name__ == '__main__':
 
         x2 = pd.merge(x, xr, on=['ID', 'VER', 'SIDE'], how='left')
 
-        # MOAKS
-        x2moaks = pd.merge(x2, moaks, on=['ID', 'VER', 'SIDE'], how='left')
-        #
-        x2moaks = pd.merge(x2, moaks, on=['ID', 'VER', 'SIDE'], how='inner')
+        # # MOAKS
+        # x2moaks = pd.merge(x2, moaks, on=['ID', 'VER', 'SIDE'], how='left')
+        # #
+        # x2moaks = pd.merge(x2, moaks, on=['ID', 'VER', 'SIDE'], how='inner')
         # moaks
-        #x2.to_csv('meta/womac4min0new3.csv')
+        x2.to_csv('meta/womac4min0.csv')
 
         # BMI, SEX, AGE
         if 0:
